@@ -1,0 +1,17 @@
+spring:
+  kafka:
+    bootstrapServers: "broker:9092"
+    #clientId: "orders-process-1"
+
+  cloud:
+    stream:
+      bindings:
+        processOrders-in-0:
+          destination: "orders"
+      kafka:
+        streams:
+          binder:
+            brokers: "broker:9092"
+            functions:
+              processOrders:
+                applicationId: "orders-process-1"
