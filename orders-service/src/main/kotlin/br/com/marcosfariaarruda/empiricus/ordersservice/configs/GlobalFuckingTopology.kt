@@ -20,7 +20,7 @@ class GlobalFuckingTopology {
     companion object {
         const val ORDERS_TOPIC: String = "orders"
         const val ORDER_VALIDATIONS: String = "order-validations"
-        const val MATERIALIZED_ANALYSIS_NAME:String = "materialized-order-validations"
+        const val MATERIALIZED_ORDERS:String = "materialized-orders"
     }
 
     private val bootstrapAddress: String = "broker:9092"

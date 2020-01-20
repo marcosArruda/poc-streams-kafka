@@ -2,11 +2,14 @@ package br.com.marcosfariaarruda.empiricus.ordersservice.services
 
 import br.com.marcosfariaarruda.empiricus.model.Order
 import br.com.marcosfariaarruda.empiricus.model.OrderAnalysis
+import br.com.marcosfariaarruda.empiricus.model.OrderAnalysisSerde
 import br.com.marcosfariaarruda.empiricus.model.WalletsBox
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
 import br.com.marcosfariaarruda.empiricus.ordersservice.producers.OrderProducer
+import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.kstream.KStream
+import org.apache.kafka.streams.kstream.Produced
 import org.springframework.stereotype.Service
 
 @Service
@@ -17,31 +20,30 @@ class FinancialService {
     private lateinit var createdStream: KStream<String, Order>
     private lateinit var validatedStream: KStream<String, Order>
 
-    fun init(stream: KStream<String, Order>) {
-        this.createdStream = stream.filter { _, order -> order.state == "CREATED"}
-        this.validatedStream = stream.filter { _, order -> order.state == "VALIDATED"}
+    fun init(createdStream: KStream<String, Order>, validatedStream: KStream<String, Order>) {
+        this.createdStream = createdStream
+        this.validatedStream = validatedStream
         preStreams()
         finalStreams()
     }
 
     fun preStreams() {
-        val approvedStream = createdStream.filter { _, order -> canProceed(order) }
-        val unapproovedStream = createdStream.filter { _, order -> !canProceed(order) }
-
-        approvedStream
-                .map { key, order -> KeyValue(key, approvePass(order))  }
-                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, OrdersValidationService.producedStringOrderAnalysis)
-
-        unapproovedStream
-                .peek {key, _ -> println("[FinancialService-PRE] unapproved $key") }
-                .map { key, order -> KeyValue(key, blockPass(order))  }
-                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, OrdersValidationService.producedStringOrderAnalysis)
+        createdStream
+                .mapValues{ _, order ->
+                    println(">>[FinancialService-PRE] validating")
+                    if(canProceed(order)) approvePass(order) else blockPass(order)
+                }
+                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, Produced.with(Serdes.String(), OrderAnalysisSerde()))
     }
 
     fun finalStreams() {
         validatedStream
-                .peek{_, order -> println("[FinancialService-FINAL] transacting payment{totalPrice=${order.product.price * order.quantity}} for product=${order.product} ")}
-                .foreach { _, order -> wallets.transactDebit(order.user, order.product.price * order.quantity) }
+                //.peek{_, order -> println("[FinancialService-FINAL] transacting payment{totalPrice=${order.product.price * order.quantity}} for product=${order.product} ")}
+                .mapValues { _, order ->
+                    wallets.transactDebit(order.user, order.product.price * order.quantity)
+                    return@mapValues order.copy(state = "FINISHED")
+                }
+                .to(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.producedStringOrder)
         /*
         validatedStream
                 .filter { _, order -> canProceed(order) }

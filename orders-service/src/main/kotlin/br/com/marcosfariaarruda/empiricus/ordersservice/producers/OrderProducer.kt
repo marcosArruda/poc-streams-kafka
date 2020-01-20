@@ -4,6 +4,7 @@ import br.com.marcosfariaarruda.empiricus.model.Order
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
 import br.com.marcosfariaarruda.empiricus.ordersservice.services.FraudService
 import br.com.marcosfariaarruda.empiricus.ordersservice.services.InventoryService
+import br.com.marcosfariaarruda.empiricus.ordersservice.services.OrderFinishedKTableService
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.kafka.core.KafkaAdmin
 import org.springframework.kafka.core.KafkaTemplate
@@ -24,7 +25,7 @@ class OrderProducer @Autowired constructor(private val kafkaTemplate: KafkaTempl
         kafkaAdmin.initialize()
     }
 
-    @Scheduled(initialDelay = 1000 * 15, fixedRate = 3000)
+    //@Scheduled(initialDelay = 1000 * 15, fixedRate = 3000)
     fun sendMessage() {
         val user = fraudService.getRamdomUser()
 
@@ -36,8 +37,9 @@ class OrderProducer @Autowired constructor(private val kafkaTemplate: KafkaTempl
                 state = "CREATED",
                 isFraud = nextBoolean()
         )
-        println("[CREATING A NEW ORDER] key: ${order.id}_${user.name}_${order.product.name}, value: $order")
-        kafkaTemplate.send(GlobalFuckingTopology.ORDERS_TOPIC, "${order.id}_${user.name}_${order.product.name}_${order.isFraud}", order)
+        val key = OrderFinishedKTableService.deduceKey(order)
+        println("[CREATING A NEW ORDER] key: $key, value: $order")
+        kafkaTemplate.send(GlobalFuckingTopology.ORDERS_TOPIC, key, order)
         /*
         val future: ListenableFuture<SendResult<String, String>> = kafkaTemplate.send("orders", msg)
 

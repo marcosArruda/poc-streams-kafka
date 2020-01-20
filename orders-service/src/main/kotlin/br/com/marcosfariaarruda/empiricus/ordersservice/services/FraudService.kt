@@ -2,11 +2,14 @@ package br.com.marcosfariaarruda.empiricus.ordersservice.services
 
 import br.com.marcosfariaarruda.empiricus.model.Order
 import br.com.marcosfariaarruda.empiricus.model.OrderAnalysis
+import br.com.marcosfariaarruda.empiricus.model.OrderAnalysisSerde
 import br.com.marcosfariaarruda.empiricus.model.UserBox
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
 import br.com.marcosfariaarruda.empiricus.ordersservice.producers.OrderProducer
+import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.kstream.KStream
+import org.apache.kafka.streams.kstream.Produced
 import org.springframework.stereotype.Service
 
 @Service
@@ -14,27 +17,23 @@ class FraudService {
 
     private val users: UserBox = UserBox()
 
-    private lateinit var stream: KStream<String, Order>
+    private lateinit var createdStream: KStream<String, Order>
+    private lateinit var validatedStream: KStream<String, Order>
 
-    fun init(stream: KStream<String, Order>): KStream<String, Order> {
-        this.stream = stream.filter { _, order -> order.state == "CREATED"}
+    fun init(createdStream: KStream<String, Order>, validatedStream: KStream<String, Order>): KStream<String, Order> {
+        this.createdStream = createdStream
+        this.validatedStream = validatedStream
         preStream()
-        return this.stream
+        return this.createdStream
     }
 
     fun preStream() {
-
-        val approvedStream = stream.filter { _, order -> canProceed(order) }
-        val unapproovedStream = stream.filter { _, order -> !canProceed(order) }
-
-        approvedStream
-                .map { key, order -> KeyValue(key, approvePass(order))  }
-                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, OrdersValidationService.producedStringOrderAnalysis)
-
-        unapproovedStream
-                .peek {key, _ -> println("[FraudService-PRE] unapproved $key") }
-                .map { key, order -> KeyValue(key, blockPass(order))  }
-                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, OrdersValidationService.producedStringOrderAnalysis)
+        createdStream
+                .mapValues { _, order ->
+                    println(">>[FraudService-PRE] validating")
+                    if(canProceed(order)) approvePass(order) else blockPass(order)
+                }
+                .to(GlobalFuckingTopology.ORDER_VALIDATIONS, Produced.with(Serdes.String(), OrderAnalysisSerde()))
     }
 
     fun getRamdomUser() = users.getRandomUser()

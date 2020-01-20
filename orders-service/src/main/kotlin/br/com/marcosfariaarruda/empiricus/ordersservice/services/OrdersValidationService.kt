@@ -4,21 +4,27 @@ import br.com.marcosfariaarruda.empiricus.model.Order
 import br.com.marcosfariaarruda.empiricus.model.OrderAnalysis
 import br.com.marcosfariaarruda.empiricus.model.OrderAnalysisSerde
 import br.com.marcosfariaarruda.empiricus.model.OrderSerde
+import br.com.marcosfariaarruda.empiricus.ordersservice.api.util.Contador
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
 import org.apache.kafka.common.serialization.Serde
 import org.apache.kafka.common.serialization.Serdes
+import org.apache.kafka.common.utils.Bytes
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.kstream.*
+import org.apache.kafka.streams.state.KeyValueStore
 import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.apache.kafka.streams.state.ReadOnlyKeyValueStore
+import org.apache.kafka.streams.state.Stores
+import org.apache.kafka.streams.state.internals.InMemoryKeyValueStore
 import org.springframework.stereotype.Service
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
 
 @Service
 class OrdersValidationService {
 
     private val numberOfRules: Int = 3
-    private lateinit var streamOrders: KStream<String, Order>
+    private lateinit var createdStream: KStream<String, Order>
 
     //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA SINCRONA
     //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA ASYNC
@@ -29,39 +35,72 @@ class OrdersValidationService {
         val stringSerde: Serde<String> = Serdes.String()
         val groupedStringOrderAnalysis:Grouped<String, OrderAnalysis> = Grouped.with(stringSerde, OrderAnalysisSerde())
         val groupedStringOrder:Grouped<String, Order> = Grouped.with(stringSerde, OrderSerde())
+        val materializedStringOrder:Materialized<String, Order, KeyValueStore<Bytes, ByteArray>> = Materialized.with(stringSerde, OrderSerde())
         val sessionWindow5min:SessionWindows = SessionWindows.with(Duration.ofMinutes(5))
         val sessionWindow1min:SessionWindows = SessionWindows.with(Duration.ofMinutes(1))
+        val sessionWindow15s:SessionWindows = SessionWindows.with(Duration.ofSeconds(15))
+        val sessionWindow3s:SessionWindows = SessionWindows.with(Duration.ofSeconds(3))
+        val sessionWindow5s:SessionWindows = SessionWindows.with(Duration.ofSeconds(5))
         val joinWindow5min:JoinWindows = JoinWindows.of(Duration.ofMinutes(5))
         val joinWindow1min:JoinWindows = JoinWindows.of(Duration.ofMinutes(1))
+        val joinWindow15s:JoinWindows = JoinWindows.of(Duration.ofSeconds(15))
+        val joinWindow3s:JoinWindows = JoinWindows.of(Duration.ofSeconds(3))
+        val joinWindow5s:JoinWindows = JoinWindows.of(Duration.ofSeconds(5))
         val joinedStringLongOrder:Joined<String, Long, Order> = Joined.with(stringSerde, Serdes.Long(), OrderSerde())
         val producedStringOrder:Produced<String, Order> = Produced.with(stringSerde, OrderSerde())
         val producedStringOrderAnalysis:Produced<String, OrderAnalysis> = Produced.with(stringSerde, OrderAnalysisSerde())
         val joinedStringAnalysisOrder:Joined<String, OrderAnalysis, Order> = Joined.with(stringSerde, OrderAnalysisSerde(), OrderSerde())
         val consumedOrdersType:Consumed<String, Order> = Consumed.with(stringSerde, OrderSerde())
         val consumedOrderAnalysisType:Consumed<String, OrderAnalysis> = Consumed.with(stringSerde, OrderAnalysisSerde())
+        val validationMapMemory:MutableMap<String, Contador> = mutableMapOf()
     }
 
-    fun init(orders: KStream<String, Order>, analysis: KStream<String, OrderAnalysis>): KStream<String, OrderAnalysis> {
+    fun init(createdStream: KStream<String, Order>, analysis: KStream<String, OrderAnalysis>): KStream<String, OrderAnalysis> {
 
-        this.streamOrders = orders.filter { _, order -> order.state == "CREATED" }
+        this.createdStream = createdStream
         //success results
         analysis
+                /*
+                .peek{key, _ ->
+                    if(validationMapMemory.containsKey(key)){
+                        validationMapMemory[key]!!.qtd.inc()
+                        if(validationMapMemory[key]!!.qtd == 3){
+                            validationMapMemory[key] = validationMapMemory[key]!!.copy(finished = true)
+                        }
+                    }else{
+                        validationMapMemory[key] = Contador()
+                    }}
+                .filter{ key, _ -> validationMapMemory[key]!!.finished}
+                .join(streamOrders, { _, order -> order.copy(state = "VALIDATED" )}, joinWindow3s, joinedStringAnalysisOrder)
+                //.peek{key, _ -> println("[OrdersValidationService] VALIDATED $key")}
+                .to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
+                */
+
+                //.peek { key, value ->  println("111111111>> $key -> $value")}
                 .groupByKey(groupedStringOrderAnalysis)
-                .windowedBy(sessionWindow1min)
+                .windowedBy(sessionWindow5min)
                 .aggregate({ 0 }, { _, value, total -> if (value.pass) total.inc() else total }, { _, a, b -> b ?: a }, Materialized.with(null, Serdes.Long()))
                 .toStream {windowedKey, _ -> windowedKey.key()}
+                //.peek { key, value ->  println("222222222>> $key -> $value")}
                 .filter {_, v -> v != null}
+                //.peek{key, total -> println(">>>>>>>>>> $key has $total validations complete")}
                 .filter { _, total -> total >= numberOfRules}
-                .join(streamOrders, { _, order -> order.copy(state = "VALIDATED" )}, joinWindow1min, joinedStringLongOrder)
+                .join(this.createdStream, { _, order -> order.copy(state = "VALIDATED" )}, joinWindow5min, joinedStringLongOrder)
+                //.peek{key, _ -> println("[OrdersValidationService] VALIDATED $key")}
                 .to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
 
+
+
         //failed results
-        analysis
+        //analysis
+                /*
                 .filter { _, rule -> !rule.pass}
-                .join(streamOrders, {analysed, order -> order.copy(state = "FAILED: ${analysed.analysedFrom}").also { shit -> shit.analysis.add(analysed) }}, joinWindow1min, joinedStringAnalysisOrder)
+                .join(this.createdStream, {analysed, order -> order.copy(state = "FAILED: ${analysed.analysedFrom}").also { shit -> shit.analysis.add(analysed) }}, joinWindow15s, joinedStringAnalysisOrder)
                 .groupByKey(groupedStringOrder)
                 .reduce { order, _ -> order}
-                .toStream().to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
+                .toStream().peek{key, _ -> println("[OrdersValidationService] FAILED $key")}
+                .to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
+                */
         return analysis
     }
 

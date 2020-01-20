@@ -4,29 +4,35 @@ import br.com.marcosfariaarruda.empiricus.model.Order
 import br.com.marcosfariaarruda.empiricus.model.OrderAnalysis
 import br.com.marcosfariaarruda.empiricus.model.OrderSerde
 import br.com.marcosfariaarruda.empiricus.model.ResponseOrders
+import br.com.marcosfariaarruda.empiricus.ordersservice.api.util.OrderCreatedSupplier
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.CustomRocksDBConfig
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
+import br.com.marcosfariaarruda.empiricus.ordersservice.producers.OrderProducer
 import br.com.marcosfariaarruda.empiricus.ordersservice.services.*
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.StreamsConfig
+import org.apache.kafka.streams.kstream.KTable
+import org.apache.kafka.streams.kstream.Materialized
+import org.apache.kafka.streams.state.QueryableStoreTypes
+import org.apache.kafka.streams.state.ReadOnlyKeyValueStore
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.ResponseEntity
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.web.bind.annotation.*
+import reactor.core.publisher.Mono
 import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 @RestController
 class OrdersController @Autowired constructor(private val kafkaTemplate: KafkaTemplate<String, Order>,
-                                              private val inventoryService: InventoryService,
+                                              private val orderFinishedKTableService: OrderFinishedKTableService,
                                               private val fraudService: FraudService,
-                                              private val financialService: FinancialService,
-                                              private val ordersValidationService: OrdersValidationService,
-                                              private val globalService: GlobalService) {
+                                              private val inventoryService: InventoryService) {
 
 
 
@@ -35,56 +41,20 @@ class OrdersController @Autowired constructor(private val kafkaTemplate: KafkaTe
         return ResponseEntity.ok(ResponseOrders(listOf()))
     }
 
-    @GetMapping("/shit/start")
-    fun startShit():ResponseEntity<ResponseOrders>{
-        doShit()
-        return ResponseEntity.ok(ResponseOrders(listOf()))
+    @GetMapping("/example-order")
+    fun getExampleOrder():ResponseEntity<Order>{
+        return ResponseEntity.ok(Order(
+                id = OrderProducer.randLong(),
+                product = inventoryService.getRamdomProduct(),
+                user = fraudService.getRamdomUser(),
+                quantity = 1,
+                state = "CREATED",
+                isFraud = Random.nextBoolean()
+        ))
     }
 
-    fun doShit(): KafkaStreams {
-        val builder = StreamsBuilder()
-
-        val ordersStream = builder.stream<String, Order>(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType)
-
-        inventoryService.init(ordersStream)
-        fraudService.init(ordersStream)
-        financialService.init(ordersStream)
-
-        ordersValidationService.init(ordersStream, builder.stream<String, OrderAnalysis>(GlobalFuckingTopology.ORDER_VALIDATIONS, OrdersValidationService.consumedOrderAnalysisType)
-        )
-
-        globalService.init()
-
-        //builder.table(ORDER_VALIDATIONS, Consumed.with(Serdes.String(), OrderAnalysisSerde()), Materialized.`as`(MATERIALIZED_ANALYSIS_NAME))
-        val configProps = Properties()
-        configProps[StreamsConfig.BOOTSTRAP_SERVERS_CONFIG] = "broker:9092"
-        configProps[StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG] = Serdes.StringSerde::class.java.name
-        configProps[StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG] = OrderSerde::class.java.name
-        configProps[StreamsConfig.ROCKSDB_CONFIG_SETTER_CLASS_CONFIG] = CustomRocksDBConfig::class.java.name
-
-        val configPropsGlobal = Properties()
-        configPropsGlobal[StreamsConfig.BOOTSTRAP_SERVERS_CONFIG] = "broker:9092"
-        configPropsGlobal[StreamsConfig.APPLICATION_ID_CONFIG] = "myfucking-stream"
-        configPropsGlobal[StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG] = Serdes.StringSerde::class.java.name
-        configPropsGlobal[StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG] = OrderSerde::class.java.name
-        configPropsGlobal[StreamsConfig.ROCKSDB_CONFIG_SETTER_CLASS_CONFIG] = CustomRocksDBConfig::class.java.name
-        return startShit(builder, configProps, configPropsGlobal)
-    }
-
-    private fun startShit(builder: StreamsBuilder, configProps: Properties, configPropsGlobal: Properties): KafkaStreams {
-        val startLatch = CountDownLatch(1)
-        val streams = KafkaStreams(builder.build(configProps), configPropsGlobal)
-        streams.cleanUp()
-        streams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        streams.start()
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            (globalService.getApplicationContext() as ConfigurableApplicationContext).close()
-            Thread.currentThread().interrupt()
-        }
-        return streams
+    @PostMapping("/order")
+    fun newOrder(@RequestBody newOrder:Order):Mono<Order>{
+        return Mono.fromCallable(OrderCreatedSupplier(newOrder, kafkaTemplate, orderFinishedKTableService))
     }
 }
