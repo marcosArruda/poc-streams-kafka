@@ -10,6 +10,7 @@ import org.apache.kafka.common.serialization.Serde
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.common.utils.Bytes
 import org.apache.kafka.streams.KafkaStreams
+import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.*
 import org.apache.kafka.streams.state.KeyValueStore
 import org.apache.kafka.streams.state.QueryableStoreTypes
@@ -19,12 +20,14 @@ import org.apache.kafka.streams.state.internals.InMemoryKeyValueStore
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @Service
 class OrdersValidationService {
 
     private val numberOfRules: Int = 3
     private lateinit var createdStream: KStream<String, Order>
+    private lateinit var analysisStream: KStream<String, OrderAnalysis>
 
     //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA SINCRONA
     //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA ASYNC
@@ -55,11 +58,37 @@ class OrdersValidationService {
         val validationMapMemory:MutableMap<String, Contador> = mutableMapOf()
     }
 
-    fun init(createdStream: KStream<String, Order>, analysis: KStream<String, OrderAnalysis>): KStream<String, OrderAnalysis> {
+    fun init(): KafkaStreams {
+        val builder = StreamsBuilder()
+        this.createdStream = builder.stream<String, Order>(GlobalFuckingTopology.ORDERS_TOPIC, consumedOrdersType).filter{_, order -> order.state == "CREATED"}
+        this.analysisStream = builder.stream<String, OrderAnalysis>(GlobalFuckingTopology.ORDER_VALIDATIONS, consumedOrderAnalysisType)
+        finalStreams()
+        val props = GlobalService.newConfigProperties("ANALYSIS-VALIDATIONS")
+        val topology = builder.build(props)
+        println("======================================================================================================")
+        println(topology.describe().toString())
+        println("======================================================================================================")
 
-        this.createdStream = createdStream
-        //success results
-        analysis
+        val startLatch = CountDownLatch(1)
+        val kafkaStreams = KafkaStreams(topology, props)
+
+        kafkaStreams.cleanUp()
+        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
+        kafkaStreams.start()
+
+        try {
+            if (!startLatch.await(60, TimeUnit.SECONDS)) {
+                throw RuntimeException("Streams never finished rebalancing on startup")
+            }
+        }catch (e:InterruptedException){
+            Thread.currentThread().interrupt()
+        }
+
+        return kafkaStreams
+    }
+
+    private fun finalStreams(){
+        analysisStream
                 /*
                 .peek{key, _ ->
                     if(validationMapMemory.containsKey(key)){
@@ -93,15 +122,14 @@ class OrdersValidationService {
 
         //failed results
         //analysis
-                /*
-                .filter { _, rule -> !rule.pass}
-                .join(this.createdStream, {analysed, order -> order.copy(state = "FAILED: ${analysed.analysedFrom}").also { shit -> shit.analysis.add(analysed) }}, joinWindow15s, joinedStringAnalysisOrder)
-                .groupByKey(groupedStringOrder)
-                .reduce { order, _ -> order}
-                .toStream().peek{key, _ -> println("[OrdersValidationService] FAILED $key")}
-                .to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
-                */
-        return analysis
+        /*
+        .filter { _, rule -> !rule.pass}
+        .join(this.createdStream, {analysed, order -> order.copy(state = "FAILED: ${analysed.analysedFrom}").also { shit -> shit.analysis.add(analysed) }}, joinWindow15s, joinedStringAnalysisOrder)
+        .groupByKey(groupedStringOrder)
+        .reduce { order, _ -> order}
+        .toStream().peek{key, _ -> println("[OrdersValidationService] FAILED $key")}
+        .to(GlobalFuckingTopology.ORDERS_TOPIC, producedStringOrder)
+        */
     }
 
     /*

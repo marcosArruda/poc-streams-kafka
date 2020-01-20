@@ -11,7 +11,7 @@ class OrderCreatedSupplier(private val newOrder:Order, private val kafkaTemplate
     override fun call(): Order? {
         kafkaTemplate.send(GlobalFuckingTopology.ORDERS_TOPIC, OrderFinishedKTableService.deduceKey(newOrder), newOrder)
         while (true){
-            Thread.sleep(1000)
+            Thread.sleep(100)
             if(orderFinishedKTableService.hasOrderFinished(newOrder)){
                 val x = orderFinishedKTableService.getFinishedOrder(newOrder)
                 println(">>>> ACHOU: $x")

@@ -4,10 +4,15 @@ import br.com.marcosfariaarruda.empiricus.model.*
 import br.com.marcosfariaarruda.empiricus.ordersservice.configs.GlobalFuckingTopology
 import br.com.marcosfariaarruda.empiricus.ordersservice.producers.OrderProducer
 import org.apache.kafka.common.serialization.Serdes
+import org.apache.kafka.streams.KafkaStreams
 import org.apache.kafka.streams.KeyValue
+import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.KStream
 import org.apache.kafka.streams.kstream.Produced
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.stereotype.Service
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @Service
 class InventoryService {
@@ -16,11 +21,35 @@ class InventoryService {
     private lateinit var createdStream: KStream<String, Order>
     private lateinit var validatedStream: KStream<String, Order>
 
-    fun init(createdStream: KStream<String, Order>, validatedStream: KStream<String, Order>){
-        this.createdStream = createdStream
-        this.validatedStream = validatedStream
+    fun init():KafkaStreams{
+        val builder = StreamsBuilder()
+        val orderStream = builder.stream<String, Order>(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType)
+        this.createdStream = orderStream.filter{_, order -> order.state == "CREATED"}
+        this.validatedStream = orderStream.filter{ _, order -> order.state == "VALIDATED"}
         preStreams()
         finalStreams()
+        val props = GlobalService.newConfigProperties("INVENTORY")
+        val topology = builder.build(props)
+        println("======================================================================================================")
+        println(topology.describe().toString())
+        println("======================================================================================================")
+
+        val startLatch = CountDownLatch(1)
+        val kafkaStreams = KafkaStreams(topology, props)
+
+        kafkaStreams.cleanUp()
+        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
+        kafkaStreams.start()
+
+        try {
+            if (!startLatch.await(60, TimeUnit.SECONDS)) {
+                throw RuntimeException("Streams never finished rebalancing on startup")
+            }
+        }catch (e:InterruptedException){
+            Thread.currentThread().interrupt()
+        }
+
+        return kafkaStreams
     }
 
     fun preStreams() {
