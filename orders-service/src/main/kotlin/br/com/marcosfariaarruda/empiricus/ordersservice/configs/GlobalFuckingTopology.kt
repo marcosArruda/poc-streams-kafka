@@ -19,8 +19,10 @@ class GlobalFuckingTopology {
 
     companion object {
         const val ORDERS_TOPIC: String = "orders"
+        const val ORDERS_LONG_TOPIC: String = "orders-long"
         const val ORDER_VALIDATIONS: String = "order-validations"
         const val MATERIALIZED_ORDERS:String = "materialized-orders"
+        const val MATERIALIZED_ORDERS_KEYLONG:String = "materialized-orders-keylong"
     }
 
     private val bootstrapAddress: String = "broker:9092"
@@ -29,6 +31,11 @@ class GlobalFuckingTopology {
     @Bean
     fun orders(): NewTopic {
         return NewTopic(ORDERS_TOPIC, 3, 1.toShort())
+    }
+
+    @Bean
+    fun ordersLong(): NewTopic {
+        return NewTopic(ORDERS_LONG_TOPIC, 3, 1.toShort())
     }
 
 

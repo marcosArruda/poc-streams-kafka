@@ -81,8 +81,21 @@ class GlobalService @Autowired constructor(private val inventoryService: Invento
             configProps[StreamsConfig.NUM_STREAM_THREADS_CONFIG] = 3
             configProps[StreamsConfig.PRODUCER_PREFIX+ProducerConfig.BATCH_SIZE_CONFIG] = 0
             configProps[StreamsConfig.TOPOLOGY_OPTIMIZATION] = StreamsConfig.OPTIMIZE
-            configProps[StreamsConfig.COMMIT_INTERVAL_MS_CONFIG] = 10
-            configProps[StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG] = 10240
+            configProps[StreamsConfig.COMMIT_INTERVAL_MS_CONFIG] = 0
+            //configProps[StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG] = 10240
+            return configProps
+        }
+
+        fun noDefaultsConfigProperties(applicationId:String):Properties{
+            val configProps = Properties()
+            configProps[StreamsConfig.BOOTSTRAP_SERVERS_CONFIG] = "broker:9092"
+            configProps[StreamsConfig.APPLICATION_ID_CONFIG] = applicationId
+            configProps[StreamsConfig.ROCKSDB_CONFIG_SETTER_CLASS_CONFIG] = CustomRocksDBConfig::class.java.name
+            configProps[StreamsConfig.NUM_STREAM_THREADS_CONFIG] = 3
+            configProps[StreamsConfig.PRODUCER_PREFIX+ProducerConfig.BATCH_SIZE_CONFIG] = 0
+            configProps[StreamsConfig.TOPOLOGY_OPTIMIZATION] = StreamsConfig.OPTIMIZE
+            configProps[StreamsConfig.COMMIT_INTERVAL_MS_CONFIG] = 0
+            //configProps[StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG] = 10240
             return configProps
         }
     }

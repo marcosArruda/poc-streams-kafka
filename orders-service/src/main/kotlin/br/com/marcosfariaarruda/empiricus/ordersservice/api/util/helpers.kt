@@ -11,13 +11,13 @@ class OrderCreatedSupplier(private val newOrder:Order, private val kafkaTemplate
     override fun call(): Order? {
         kafkaTemplate.send(GlobalFuckingTopology.ORDERS_TOPIC, OrderFinishedKTableService.deduceKey(newOrder), newOrder)
         while (true){
-            Thread.sleep(50)
+            Thread.sleep(30)
             if(orderFinishedKTableService.hasOrderFinished(newOrder)){
                 val x = orderFinishedKTableService.getFinishedOrder(newOrder)
                 println(">>>> ACHOU: $x")
                 return x
             }
-            println(">>>>>> PROCURANDO_POR: $newOrder")
+            //println(">>>>>> PROCURANDO_POR: $newOrder")
         }
     }
 }

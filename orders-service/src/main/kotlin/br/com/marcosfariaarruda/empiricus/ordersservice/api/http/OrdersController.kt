@@ -22,6 +22,7 @@ import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.ResponseEntity
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.web.bind.annotation.*
+import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.util.*
 import java.util.concurrent.CountDownLatch
@@ -57,4 +58,13 @@ class OrdersController @Autowired constructor(private val kafkaTemplate: KafkaTe
     fun newOrder(@RequestBody newOrder:Order):Mono<Order>{
         return Mono.fromCallable(OrderCreatedSupplier(newOrder, kafkaTemplate, orderFinishedKTableService))
     }
+
+    @GetMapping("/order/{id}")
+    fun oneOrder(@PathVariable id:Long):Mono<Order?> = Mono.just(id).map { x -> orderFinishedKTableService.get(x) }
+
+    @GetMapping("/order/multi/{multipleOrders}")
+    fun multipleOrders(@PathVariable multipleOrders:String): Flux<Order?> = Flux.fromStream(multipleOrders.split("-").stream()).map{ id -> orderFinishedKTableService.get(id.toLong())}
+
+    @GetMapping("/order")
+    fun allOrders(): Mono<MutableSet<Order>> = orderFinishedKTableService.getAll()
 }
