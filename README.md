@@ -1,4 +1,4 @@
-# Acta POC Streams
+# POC Streams
 
 ## O que é?
 
