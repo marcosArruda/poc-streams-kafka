@@ -9,7 +9,7 @@ import br.com.marcosfariaarruda.empiricus.ordersservice.producers.OrderProducer
 import org.apache.kafka.streams.kstream.KStream
 import org.springframework.stereotype.Service
 
-@Service
+//@Service
 class ContractsService {
 
     //TODO: Finalizar o Contracts

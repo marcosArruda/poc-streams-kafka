@@ -9,13 +9,14 @@ import org.apache.kafka.streams.KeyValue
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.KStream
 import org.apache.kafka.streams.kstream.Produced
+import org.apache.kafka.streams.state.QueryableStoreTypes
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.stereotype.Service
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @Service
-class InventoryService {
+class InventoryService : BasicService(){
 
     private val products = ProductBox()
     private lateinit var createdStream: KStream<String, Order>
@@ -33,23 +34,9 @@ class InventoryService {
         println("======================================================================================================")
         println(topology.describe().toString())
         println("======================================================================================================")
-
-        val startLatch = CountDownLatch(1)
         val kafkaStreams = KafkaStreams(topology, props)
 
-        kafkaStreams.cleanUp()
-        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        kafkaStreams.start()
-
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            Thread.currentThread().interrupt()
-        }
-
-        return kafkaStreams
+        return boilerplateStart(kafkaStreams)
     }
 
     fun preStreams() {
@@ -76,7 +63,7 @@ class InventoryService {
 
     private fun canProceed(order: Order): Boolean = products.stockAvailable(order.product, order.quantity)
 
-    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, true)
+    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "InventoryService", order.id, true)
 
-    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, false)
+    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "InventoryService", order.id, false)
 }

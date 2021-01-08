@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @Service
-class FinancialService {
+class FinancialService : BasicService(){
 
     private val wallets: WalletsBox = WalletsBox()
 
@@ -36,22 +36,8 @@ class FinancialService {
         println("======================================================================================================")
         println(topology.describe().toString())
         println("======================================================================================================")
-        val startLatch = CountDownLatch(1)
         val kafkaStreams = KafkaStreams(topology, props)
-
-        kafkaStreams.cleanUp()
-        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        kafkaStreams.start()
-
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            Thread.currentThread().interrupt()
-        }
-
-        return kafkaStreams
+        return boilerplateStart(kafkaStreams)
     }
 
     fun preStreams() {
@@ -84,7 +70,7 @@ class FinancialService {
 
     private fun canProceed(order: Order): Boolean = wallets.hasCredit(order.user, order.product.price.toLong())
 
-    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, true)
+    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "FinancialService", order.id, true)
 
-    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, false)
+    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "FinancialService", order.id, false)
 }

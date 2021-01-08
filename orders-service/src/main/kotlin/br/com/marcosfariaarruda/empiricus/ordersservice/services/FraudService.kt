@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @Service
-class FraudService {
+class FraudService :BasicService() {
 
     private val users: UserBox = UserBox()
 
@@ -35,23 +35,9 @@ class FraudService {
         println("======================================================================================================")
         println(topology.describe().toString())
         println("======================================================================================================")
-
-        val startLatch = CountDownLatch(1)
         val kafkaStreams = KafkaStreams(topology, props)
 
-        kafkaStreams.cleanUp()
-        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        kafkaStreams.start()
-
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            Thread.currentThread().interrupt()
-        }
-
-        return kafkaStreams
+        return boilerplateStart(kafkaStreams)
     }
 
     fun preStream() {
@@ -65,9 +51,9 @@ class FraudService {
 
     fun getRamdomUser() = users.getRandomUser()
 
-    private fun canProceed(order: Order): Boolean = users.isFraud(order)
+    private fun canProceed(order: Order): Boolean = !users.isFraud(order)
 
-    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, true)
+    private fun approvePass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "FraudService", order.id, true)
 
-    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), this.javaClass.simpleName, order.id, false)
+    private fun blockPass(order: Order): OrderAnalysis = OrderAnalysis(OrderProducer.randLong(), "FraudService", order.id, false)
 }

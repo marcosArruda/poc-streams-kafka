@@ -39,6 +39,7 @@ class GlobalService @Autowired constructor(private val inventoryService: Invento
 
     private lateinit var kafkaStreams: KafkaStreams
 
+    //Dead Man's solution....
     @Scheduled(initialDelay = 1000 * 7, fixedDelay = Long.MAX_VALUE)
     fun init(){
         inventoryService.init()

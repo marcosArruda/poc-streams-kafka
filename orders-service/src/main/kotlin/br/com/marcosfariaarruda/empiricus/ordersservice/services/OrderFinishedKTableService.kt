@@ -39,7 +39,6 @@ class OrderFinishedKTableService {
         val mat1 = Materialized.`as`<String, Order>(Stores.inMemoryKeyValueStore(GlobalFuckingTopology.MATERIALIZED_ORDERS)).withKeySerde(Serdes.StringSerde())
         val mat2 = Materialized.`as`<Long, Order>(Stores.inMemoryKeyValueStore(GlobalFuckingTopology.MATERIALIZED_ORDERS_KEYLONG)).withKeySerde(Serdes.LongSerde())
 
-        //builder.table(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType, mat1)
         val stream = builder.stream(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType)
         stream
                 .groupByKey()
@@ -50,46 +49,14 @@ class OrderFinishedKTableService {
                 .groupByKey()
                 .reduce({_, v2 -> v2}, mat2)
 
-        /*
-        val ordersStream = builder
-                .stream(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType)
-        ordersStream
-                .groupByKey()
-                .reduce({_, v2 -> v2}, mat1)
-        ordersStream
-                .map { _, value ->  KeyValue(value.id, value)}
-
-                .groupByKey()
-                .reduce({_, v2 -> v2}, mat2)
-        */
-
-                //.groupBy{ _, value -> KeyValue(value.id, value) }
-                //.reduce({_, v2 -> v2}, {_, v2 -> v2})
-                //.queryableStoreName()
-                //.table(GlobalFuckingTopology.ORDERS_TOPIC, OrdersValidationService.consumedOrdersType, mat1)
-        //builder.table(GlobalFuckingTopology.)
-
         val props = GlobalService.noDefaultsConfigProperties("ORDERSTABLE")
         val topology = builder.build(props)
         println("======================================================================================================")
         println(topology.describe().toString())
         println("======================================================================================================")
         val kafkaStreams = KafkaStreams(topology, props)
-        val startLatch = CountDownLatch(1)
-        kafkaStreams.cleanUp()
-        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        kafkaStreams.start()
 
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            Thread.currentThread().interrupt()
-        }
-        this.ordersTable = kafkaStreams.store(GlobalFuckingTopology.MATERIALIZED_ORDERS, QueryableStoreTypes.keyValueStore())
-        this.ordersTableKeyLong = kafkaStreams.store(GlobalFuckingTopology.MATERIALIZED_ORDERS_KEYLONG, QueryableStoreTypes.keyValueStore())
-        return kafkaStreams
+        return boilerplateStartStores(kafkaStreams)
     }
 
     fun hasOrderFinished(order:Order):Boolean{
@@ -111,6 +78,22 @@ class OrderFinishedKTableService {
             iter.forEachRemaining{ keyValue -> set.add(keyValue.value)}
             return@reduceWith set
         } )
+
+    fun boilerplateStartStores(kafkaStreams:KafkaStreams, startLatch: CountDownLatch=CountDownLatch(1)):KafkaStreams{
+        kafkaStreams.cleanUp()
+        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
+        kafkaStreams.start()
+        try {
+            if (!startLatch.await(60, TimeUnit.SECONDS)) {
+                throw RuntimeException("Streams never finished rebalancing on startup")
+            }
+        }catch (e:InterruptedException){
+            Thread.currentThread().interrupt()
+        }
+        this.ordersTable = kafkaStreams.store(GlobalFuckingTopology.MATERIALIZED_ORDERS, QueryableStoreTypes.keyValueStore())
+        this.ordersTableKeyLong = kafkaStreams.store(GlobalFuckingTopology.MATERIALIZED_ORDERS_KEYLONG, QueryableStoreTypes.keyValueStore())
+        return kafkaStreams
+    }
 
     companion object {
         fun deduceKey(order:Order):String = "${order.id}_${order.user.name}_${order.product.name}_${order.isFraud}"

@@ -23,14 +23,12 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @Service
-class OrdersValidationService {
+class OrdersValidationService : BasicService(){
 
     private val numberOfRules: Int = 3
     private lateinit var createdStream: KStream<String, Order>
     private lateinit var analysisStream: KStream<String, OrderAnalysis>
 
-    //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA SINCRONA
-    //TODO: RECEBER REQUESTS DE NOVAS ORDERS E RESPONDER DE MANEIRA ASYNC
     //TODO: LIGAR E DESLIGAR O COMPRADOR AUTOMATICO
     //TODO:
 
@@ -60,31 +58,17 @@ class OrdersValidationService {
 
     fun init(): KafkaStreams {
         val builder = StreamsBuilder()
-        this.createdStream = builder.stream<String, Order>(GlobalFuckingTopology.ORDERS_TOPIC, consumedOrdersType).filter{_, order -> order.state == "CREATED"}
-        this.analysisStream = builder.stream<String, OrderAnalysis>(GlobalFuckingTopology.ORDER_VALIDATIONS, consumedOrderAnalysisType)
+        this.createdStream = builder.stream(GlobalFuckingTopology.ORDERS_TOPIC, consumedOrdersType).filter{_, order -> order.state == "CREATED"}
+        this.analysisStream = builder.stream(GlobalFuckingTopology.ORDER_VALIDATIONS, consumedOrderAnalysisType)
         finalStreams()
         val props = GlobalService.newConfigProperties("ANALYSIS-VALIDATIONS")
         val topology = builder.build(props)
         println("======================================================================================================")
         println(topology.describe().toString())
         println("======================================================================================================")
-
-        val startLatch = CountDownLatch(1)
         val kafkaStreams = KafkaStreams(topology, props)
 
-        kafkaStreams.cleanUp()
-        kafkaStreams.setStateListener { newState, oldState -> if(newState == KafkaStreams.State.RUNNING && oldState != KafkaStreams.State.RUNNING) startLatch.countDown()}
-        kafkaStreams.start()
-
-        try {
-            if (!startLatch.await(60, TimeUnit.SECONDS)) {
-                throw RuntimeException("Streams never finished rebalancing on startup")
-            }
-        }catch (e:InterruptedException){
-            Thread.currentThread().interrupt()
-        }
-
-        return kafkaStreams
+        return boilerplateStart(kafkaStreams)
     }
 
     private fun finalStreams(){
