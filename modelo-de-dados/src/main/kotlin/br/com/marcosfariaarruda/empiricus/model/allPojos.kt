@@ -19,6 +19,9 @@ FAIL_VALIDATION_INVENTORY
 FAIL_VALIDATION_MONEY
  */
 
+
+//       ESTE É O DATAMODEL DA POC, Ou seja, essas mesmas classes são o corpo dos eventos publicados.
+//       O Order que chega no topico orders é exatamente essa entidade aqui.
 data class User(val id: Long = 1, val name: String = "Marcos", val age: Int = 34, val paymentMethods: MutableList<PaymentMethod> = mutableListOf(PaymentMethod())) : Serializable
 data class PaymentMethod(val id: Long = 1, val name: String = "cartao") : Serializable
 data class Product(val id: Long = 1, val name: String = "vacas leiteiras", val price: Int = 22) : Serializable

@@ -25,13 +25,13 @@ class OrderProducer @Autowired constructor(private val kafkaTemplate: KafkaTempl
         kafkaAdmin.initialize()
     }
 
-    //@Scheduled(initialDelay = 1000 * 15, fixedRate = 3000)
+    @Scheduled(initialDelay = 1000 * 15, fixedRate = 3000)
     fun sendMessage() {
-        val user = fraudService.getRamdomUser()
+        val user = fraudService.getRandomUser()
 
         val order = Order(
                 id = randLong(),
-                product = inventoryService.getRamdomProduct(),
+                product = inventoryService.getRandomProduct(),
                 user = user,
                 quantity = 1,
                 state = "CREATED",

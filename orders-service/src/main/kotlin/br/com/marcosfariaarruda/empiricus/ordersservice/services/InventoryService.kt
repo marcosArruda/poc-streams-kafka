@@ -59,7 +59,7 @@ class InventoryService : BasicService(){
         */
     }
 
-    fun getRamdomProduct(): Product = products.getRandomProduct()
+    fun getRandomProduct(): Product = products.getRandomProduct()
 
     private fun canProceed(order: Order): Boolean = products.stockAvailable(order.product, order.quantity)
 

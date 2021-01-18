@@ -49,7 +49,7 @@ class FraudService :BasicService() {
                 .to(GlobalFuckingTopology.ORDER_VALIDATIONS, Produced.with(Serdes.String(), OrderAnalysisSerde()))
     }
 
-    fun getRamdomUser() = users.getRandomUser()
+    fun getRandomUser() = users.getRandomUser()
 
     private fun canProceed(order: Order): Boolean = !users.isFraud(order)
 
